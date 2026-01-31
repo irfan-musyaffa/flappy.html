@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flappy Spaceship - Musik Tenang</title>
+    <style>
+        body { margin: 0; background: #0a0a1a; color: white; font-family: 'Space Mono', monospace; overflow: hidden; text-align: center; }
+        canvas { background: radial-gradient(circle, #2e3b4e 0%, #0a0a1a 100%); border: 3px solid #66ffff; box-shadow: 0 0 25px #66ffff; cursor: pointer; margin-top: 15px; }
+        .hud { font-size: 24px; margin-top: 10px; color: #66ffff; text-shadow: 1px 1px 5px #000; }
+        p { color: #aaa; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div class="hud">Skor: <span id="score">0</span></div>
+    <canvas id="gameCanvas" width="400" height="500"></canvas>
+    <p>Klik layar untuk terbang!</p>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreElement = document.getElementById("score");
+
+        let score = 0;
+        let gameOver = false;
+        let gameStarted = false;
+
+        // --- SISTEM AUDIO ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playNote(freq, type, start, duration, vol) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, start);
+            gain.gain.setValueAtTime(vol, start);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(start);
+            osc.stop(start + duration);
+        }
+
+        // Melodi Latar (lebih tenang)
+        function playBackgroundMusic() {
+            if (gameOver) return;
+            let now = audioCtx.currentTime;
+            
+            // Contoh melodi tenang (nada F minor): F3, G3, Ab3, Bb3, C4, Db4, Eb4
+            playNote(174.61, 'sine', now, 0.4, 0.03); // F3
+            playNote(207.65, 'sine', now + 0.5, 0.4, 0.03); // Ab3
+            playNote(233.08, 'sine', now + 1.0, 0.4, 0.03); // Bb3
+            playNote(261.63, 'sine', now + 1.5, 0.4, 0.03); // C4
+            
+            setTimeout(playBackgroundMusic, 2000); // Ulangi setiap 2 detik
+        }
+
+        // --- DATA GAME ---
+        let player = { x: 50, y: 250, size: 20, dy: 0, gravity: 0.5, lift: -8 };
+        let obstacles = [];
+        let obstacleGap = 120; // Jarak antar rintangan
+        let obstacleWidth = 30;
+        let obstacleSpeed = 3;
+
+        function generateObstacle() {
+            if (gameOver) return;
+            let gapY = Math.random() * (canvas.height - obstacleGap - 100) + 50; // Posisi celah
+            obstacles.push({
+                x: canvas.width,
+                y1: 0,
+                h1: gapY,
+                x2: canvas.width,
+                y2: gapY + obstacleGap,
+                h2: canvas.height - (gapY + obstacleGap),
+                passed: false
+            });
+            setTimeout(generateObstacle, 1500); // Rintangan muncul setiap 1.5 detik
+        }
+
+        // Kontrol Lompat (Klik Layar)
+        canvas.addEventListener("mousedown", () => {
+            if (!gameStarted) {
+                gameStarted = true;
+                playBackgroundMusic();
+                generateObstacle(); // Mulai generate rintangan setelah game dimulai
+            }
+            if (!gameOver) {
+                player.dy = player.lift;
+                playNote(880, 'sine', audioCtx.currentTime, 0.05, 0.05); // Suara lompat (A5)
+            }
+        });
+
+        function drawPlayer() {
+            ctx.fillStyle = "#00e6e6"; // Warna pesawat cyan
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y + player.size / 2);
+            ctx.lineTo(player.x + player.size, player.y);
+            ctx.lineTo(player.x + player.size, player.y + player.size);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawObstacles() {
+            ctx.fillStyle = "#ff6600"; // Warna rintangan oranye
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, obs.y1, obstacleWidth, obs.h1); // Rintangan atas
+                ctx.fillRect(obs.x2, obs.y2, obstacleWidth, obs.h2); // Rintangan bawah
+            });
+        }
+
+        function checkCollision() {
+            // Cek tabrakan dengan batas atas/bawah
+            if (player.y + player.size > canvas.height || player.y < 0) {
+                endGame();
+            }
+
+            // Cek tabrakan dengan rintangan
+            obstacles.forEach(obs => {
+                if (player.x + player.size > obs.x && player.x < obs.x + obstacleWidth) {
+                    // Jika tabrakan vertikal
+                    if (player.y < obs.h1 || player.y + player.size > obs.y2) {
+                        endGame();
+                    }
+                }
+            });
+        }
+
+        function endGame() {
+            if (gameOver) return;
+            gameOver = true;
+            playNote(150, 'sawtooth', audioCtx.currentTime, 0.8, 0.15); // Suara game over
+            alert("GAME OVER! Skor kamu: " + score + "\nKlik OK untuk main lagi.");
+            location.reload();
+        }
+
+        function update() {
+            if (gameOver) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameStarted) {
+                // Update player
+                player.dy += player.gravity;
+                player.y += player.dy;
+
+                // Update obstacles
+                obstacles.forEach((obs, index) => {
+                    obs.x -= obstacleSpeed;
+                    obs.x2 -= obstacleSpeed; // Pastikan rintangan bawah juga bergerak
+
+                    // Hapus rintangan yang sudah lewat
+                    if (obs.x + obstacleWidth < 0) {
+                        obstacles.splice(index, 1);
+                    }
+
+                    // Tambah skor jika player sudah melewati rintangan
+                    if (!obs.passed && player.x > obs.x + obstacleWidth) {
+                        score++;
+                        scoreElement.innerText = score;
+                        obs.passed = true;
+                    }
+                });
+            }
+
+            drawPlayer();
+            drawObstacles();
+            checkCollision();
+            requestAnimationFrame(update);
+        }
+
+        update();
+    </script>
+</body>
+</html>
